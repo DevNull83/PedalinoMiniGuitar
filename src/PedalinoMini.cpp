@@ -458,6 +458,38 @@ void setup()
   reloadProfile = true;
   controller_run();
 
+  // --- Startup: if there are actions, preselect the first available one ---
+  // This makes the header show a meaningful "last action" right after boot.
+  {
+    // If we already have a last action name, do nothing
+    if (lastPedalName[0] == '\0') {
+
+      // 1) Prefer currentBank
+      byte b = currentBank;
+      action* a = actions[b];
+
+      // 2) If currentBank has no actions, find the first bank with actions (1..BANKS-1), then fallback to bank 0
+      if (!a) {
+        for (byte i = 1; i < BANKS; i++) {
+          if (actions[i]) { b = i; a = actions[i]; break; }
+        }
+        if (!a && actions[0]) { b = 0; a = actions[0]; }
+        if (a) currentBank = b;   // "go to the first action we find" implies selecting its bank
+      }
+
+      // 3) Copy action label into lastPedalName (used by display)
+      if (a) {
+        const char* src = (a->name[0] != 0) ? a->name : a->tag0;   // prefer name, fallback to tag0
+        snprintf(lastPedalName, sizeof(lastPedalName), "%s", src);
+
+        // Remove leading ':' convention if present (so it displays cleanly)
+        if (lastPedalName[0] == ':') {
+          memmove(lastPedalName, lastPedalName + 1, strlen(lastPedalName));
+        }
+      }
+    }
+  }
+
   // Initiate USB Device MIDI communications, listen to all channels and turn Thru on/off
   usb_midi_connect();                 // On receiving MIDI data callbacks setup
   DPRINT("USB MIDI started\n");

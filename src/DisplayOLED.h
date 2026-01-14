@@ -551,6 +551,31 @@ void topOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
       display->drawString(128, 0, buf);
     }
   }
+
+  // --- Last action tag in top-right (only when popup is NOT active) ---
+  if (MTC.getMode() == MidiTimeCode::SynchroNone) {
+
+    // Show tag only when we're NOT in the temporary popup window
+    if (millis() >= endMillis2) {
+
+      // lastPedalName contains the last action label (if any)
+      if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
+
+        String s(lastPedalName);
+
+        // short to avoid clutter
+        const int maxChars = 10;
+        if (s.length() > maxChars) s = s.substring(0, maxChars);
+
+        display->setFont(ArialMT_Plain_10);
+        display->setTextAlignment(TEXT_ALIGN_RIGHT);
+
+        // Use far right; if later you enable BATTERY, it will draw at 104 (your micro-fix)
+        display->drawString(128, 0, s);
+      }
+    }
+  }
+
 }
 
 void bottomOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
