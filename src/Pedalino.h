@@ -25,12 +25,12 @@ __________           .___      .__  .__                 _____  .__       .__    
 #define PEDALS            6   // real number of pedals is board specific (see below)
 #define CONTROLS        100
 #define SEQUENCES        20
-#define STEPS            10   // number of steps for each sequence
+#define STEPS            20   // number of steps for each sequence
 #define LADDER_STEPS      6   // max number of controls in a resistor ladder
 #define ADC_BOARDS        4   //
 #define ADC_INPUTS        4   // ADS1115 number of analog inputs
 #define ADC_CHANNELS      (ADC_BOARDS * ADC_INPUTS)
-#define LEDS             10   // number of WS2812B leds (254 max)
+#define LEDS             20   // number of WS2812B leds (254 max)
 #define LED_RGB_ORDER   RGB   // do not change it, RGB order is managed by program because FastLED library does not support changing RGB order at runtime
 #define SLOTS_ROWS        2
 #define SLOTS_COLS        3
@@ -39,6 +39,8 @@ __________           .___      .__  .__                 _____  .__       .__    
 
 #define MAXACTIONNAME    16
 #define MAXBANKNAME      16
+
+extern uint16_t lastActionControl;
 
 // https://randomnerdtutorials.com/esp32-pinout-reference-gpios/
 // GPIOs 34 to 39 are GPIs – input only pins.

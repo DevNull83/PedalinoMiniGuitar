@@ -1081,6 +1081,7 @@ void fire_action(action* act, byte p, byte i, byte e)
           lastUsedPedal = p;
           lastUsed = p;
           lastSlot = act->slot;
+          lastActionControl = act->control;  // store "last executed action id"
           strlcpy(lastPedalName, act->name, MAXACTIONNAME+1);
           DPRINT("Action %s....", act->name);
           switch (act->midiMessage) {

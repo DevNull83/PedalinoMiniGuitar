@@ -89,6 +89,8 @@ TaskHandle_t loopCore1;   // loop1() on core 1
 void loop0(void * pvParameters);
 void loop1(void * pvParameters);
 
+uint16_t lastActionControl = 0xFFFF; // 0xFFFF = "none yet"
+
 void verbose_print_reset_reason(int reason)
 {
   switch (reason)
@@ -168,6 +170,78 @@ void wifi_and_battery_level() {
   }
 }
 
+
+// ------------------------------------------------------------
+// Boot LED self-test: chase a single white pixel across the strip
+// ------------------------------------------------------------
+static void boot_led_chase_test(uint16_t stepMs = 25)
+{
+  // Lights one LED at a time (white), then turns it off.
+  // Useful to visually confirm that every pixel in the chain works.
+  for (byte l = 0; l < LEDS; l++) {
+    set_led_color(l, CRGB::White, ledsOnBrightness); // applies rgbOrder + brightness
+    FastLED.show();
+    delay(stepMs);
+
+    set_led_color(l, CRGB::Black, 0);
+    FastLED.show();
+  }
+}
+
+// ------------------------------------------------------------
+// Boot LED effect: blink the whole strip N times
+// ------------------------------------------------------------
+static void boot_led_blink_all(byte times = 3, uint16_t onMs = 120, uint16_t offMs = 120)
+{
+  // Flashes all LEDs together.
+  for (byte t = 0; t < times; t++) {
+    for (byte l = 0; l < LEDS; l++) {
+      set_led_color(l, CRGB::White, ledsOnBrightness);
+    }
+    FastLED.show();
+    delay(onMs);
+
+    // Turns all LEDs off immediately (FastLED.clear(true))
+    leds_off();
+    delay(offMs);
+  }
+}
+
+// ------------------------------------------------------------
+// Boot: execute the first available Action (not just "preselect" it)
+// ------------------------------------------------------------
+static void boot_run_first_action()
+{
+  // Find the first available action (prefer currentBank, fallback to other banks).
+  byte b = currentBank;
+  action *a = actions[b];
+
+  if (!a) {
+    // Search banks 1..BANKS-1 first (typical "normal" banks),
+    // then fallback to bank 0 (global) if needed.
+    for (byte i = 1; i < BANKS; i++) {
+      if (actions[i]) { b = i; a = actions[i]; break; }
+    }
+    if (!a && actions[0]) { b = 0; a = actions[0]; }
+  }
+
+  if (!a) return; // no actions configured anywhere
+
+  // If we found the first action in a different bank, select that bank now.
+  currentBank = b;
+
+  // Derive pedal/button from the control mapping so the action is fired consistently.
+  byte p   = controls[a->control].pedal1;
+  byte btn = controls[a->control].button1;
+
+  // Safety clamps: avoid invalid indices if a control is special/unexpected.
+  if (p >= PEDALS) p = 0;
+  if (btn >= LADDER_STEPS) btn = 0;
+
+  // Execute the action as if it was triggered by a CLICK event.
+  // fire_action() is the project's standard entry point to actually run actions/sequences.
+  fire_action(a, p, btn, PED_EVENT_CLICK);
+}
 
 void setup()
 {
@@ -458,38 +532,6 @@ void setup()
   reloadProfile = true;
   controller_run();
 
-  // --- Startup: if there are actions, preselect the first available one ---
-  // This makes the header show a meaningful "last action" right after boot.
-  {
-    // If we already have a last action name, do nothing
-    if (lastPedalName[0] == '\0') {
-
-      // 1) Prefer currentBank
-      byte b = currentBank;
-      action* a = actions[b];
-
-      // 2) If currentBank has no actions, find the first bank with actions (1..BANKS-1), then fallback to bank 0
-      if (!a) {
-        for (byte i = 1; i < BANKS; i++) {
-          if (actions[i]) { b = i; a = actions[i]; break; }
-        }
-        if (!a && actions[0]) { b = 0; a = actions[0]; }
-        if (a) currentBank = b;   // "go to the first action we find" implies selecting its bank
-      }
-
-      // 3) Copy action label into lastPedalName (used by display)
-      if (a) {
-        const char* src = (a->name[0] != 0) ? a->name : a->tag0;   // prefer name, fallback to tag0
-        snprintf(lastPedalName, sizeof(lastPedalName), "%s", src);
-
-        // Remove leading ':' convention if present (so it displays cleanly)
-        if (lastPedalName[0] == ':') {
-          memmove(lastPedalName, lastPedalName + 1, strlen(lastPedalName));
-        }
-      }
-    }
-  }
-
   // Initiate USB Device MIDI communications, listen to all channels and turn Thru on/off
   usb_midi_connect();                 // On receiving MIDI data callbacks setup
   DPRINT("USB MIDI started\n");
@@ -538,6 +580,11 @@ void setup()
 #endif
 
   set_initial_led_color();
+
+  boot_led_chase_test(50);
+  boot_led_blink_all(4, 120, 120);
+  boot_run_first_action();
+
 
   xTaskCreatePinnedToCore(
                     loop1,       /* Task function. */

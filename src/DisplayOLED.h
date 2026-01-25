@@ -552,27 +552,27 @@ void topOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
     }
   }
 
-  // --- Last action tag in top-right (only when popup is NOT active) ---
+  // --- Top-right: last action tag (only when bank name is empty and popup is NOT active) ---
   if (MTC.getMode() == MidiTimeCode::SynchroNone) {
 
-    // Show tag only when we're NOT in the temporary popup window
-    if (millis() >= endMillis2) {
+    // If the bank has a name, don't show last action in the header
+    // (bank name is already shown in the main screen logic)
+    if (banknames[currentBank][0] != 0) return;
 
-      // lastPedalName contains the last action label (if any)
-      if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
+    // Don't show it while the temporary popup screen is active
+    if (millis() < endMillis2) return;
 
-        String s(lastPedalName);
+    // Show only if available and not suppressed by ':' convention
+    if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
+      String s(lastPedalName);
 
-        // short to avoid clutter
-        const int maxChars = 10;
-        if (s.length() > maxChars) s = s.substring(0, maxChars);
+      // Keep it short to avoid clutter
+      const int maxChars = 10;
+      if (s.length() > maxChars) s = s.substring(0, maxChars);
 
-        display->setFont(ArialMT_Plain_10);
-        display->setTextAlignment(TEXT_ALIGN_RIGHT);
-
-        // Use far right; if later you enable BATTERY, it will draw at 104 (your micro-fix)
-        display->drawString(128, 0, s);
-      }
+      display->setFont(ArialMT_Plain_10);
+      display->setTextAlignment(TEXT_ALIGN_RIGHT);
+      display->drawString(128, 0, s);
     }
   }
 
@@ -928,6 +928,29 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
           // Top line
           name = String((banks[currentBank][p].pedalName[0] == ':') ? &banks[currentBank][p].pedalName[1] : banks[currentBank][p].pedalName);
           name.replace(String("###"), String(currentMIDIValue[currentBank][p][0]));
+
+          // NEW: override ONLY the first top slot (p == 0)
+          // Show last action tag if available, otherwise show "act#<lastActionControl>"
+          if (p == 0) {
+            String dyn;
+
+            // Prefer last action label/tag if present and not suppressed by ':'
+            if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
+              dyn = String(lastPedalName);
+
+              // Optional: remove trailing '.' if you use it as a marker
+              if (dyn.length() > 0 && dyn[dyn.length() - 1] == '.') {
+                dyn.remove(dyn.length() - 1);
+              }
+            } else if (lastActionControl != 0xFFFF) {
+              dyn = String("act#") + String(lastActionControl+1);
+            }
+
+            if (dyn.length() > 0) {
+              name = dyn;
+            }
+          }
+
           if (IS_SINGLE_PRESS_ENABLED(pedals[p].pressMode) && currentMIDIValue[currentBank][p][0] == banks[currentBank][p].midiValue2) {
             display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
                               12 + y,
