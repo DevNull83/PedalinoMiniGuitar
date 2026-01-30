@@ -170,7 +170,6 @@ void wifi_and_battery_level() {
   }
 }
 
-
 // ------------------------------------------------------------
 // Boot LED self-test: chase a single white pixel across the strip
 // ------------------------------------------------------------
@@ -208,39 +207,34 @@ static void boot_led_blink_all(byte times = 3, uint16_t onMs = 120, uint16_t off
 }
 
 // ------------------------------------------------------------
-// Boot: execute the first available Action (not just "preselect" it)
+// Helpers to detect "_B_" in a tag/name and to run the marked action
 // ------------------------------------------------------------
-static void boot_run_first_action()
-{
-  // Find the first available action (prefer currentBank, fallback to other banks).
-  byte b = currentBank;
-  action *a = actions[b];
+static inline bool has_OnBoot_token(const char* s) {
+  if (!s || !*s) return false;
+  return strstr(s, "_B_") != nullptr;  // exact token match
+}
 
-  if (!a) {
-    // Search banks 1..BANKS-1 first (typical "normal" banks),
-    // then fallback to bank 0 (global) if needed.
-    for (byte i = 1; i < BANKS; i++) {
-      if (actions[i]) { b = i; a = actions[i]; break; }
-    }
-    if (!a && actions[0]) { b = 0; a = actions[0]; }
+static action* find_first_OnBoot_marked_action(byte bank) {
+  for (action* a = actions[bank]; a != nullptr; a = a->next) {
+    // check On/Off tags first (usual display tags), then name as last resort
+    if (has_OnBoot_token(a->tag1) || has_OnBoot_token(a->tag0) || has_OnBoot_token(a->name))
+      return a;
   }
+  return nullptr;
+}
 
-  if (!a) return; // no actions configured anywhere
+static void OnBoot_run_marked_action_in_current_bank() {
+  action* a = find_first_OnBoot_marked_action(currentBank);
+  if (!a) return;  // nothing to do
 
-  // If we found the first action in a different bank, select that bank now.
-  currentBank = b;
-
-  // Derive pedal/button from the control mapping so the action is fired consistently.
+  // Map control -> (pedal, button)
   byte p   = controls[a->control].pedal1;
   byte btn = controls[a->control].button1;
-
-  // Safety clamps: avoid invalid indices if a control is special/unexpected.
   if (p >= PEDALS) p = 0;
   if (btn >= LADDER_STEPS) btn = 0;
 
-  // Execute the action as if it was triggered by a CLICK event.
-  // fire_action() is the project's standard entry point to actually run actions/sequences.
-  fire_action(a, p, btn, PED_EVENT_CLICK);
+  // Run the action as a CLICK (coerente con la maggior parte delle action)
+  fire_action(a, p, btn, PED_EVENT_CLICK);  // esegue davvero l’action/sequence e aggiorna i LED
 }
 
 void setup()
@@ -583,8 +577,8 @@ void setup()
 
   boot_led_chase_test(50);
   boot_led_blink_all(4, 120, 120);
-  boot_run_first_action();
-
+  
+  OnBoot_run_marked_action_in_current_bank(); // execute first action with _B_
 
   xTaskCreatePinnedToCore(
                     loop1,       /* Task function. */

@@ -1075,6 +1075,16 @@ void midi_send(byte message, byte code, byte value, byte channel, bool on_off, b
   }
 }
 
+// === Display text sanitizer ===============================================
+// Remove display-only tokens and cosmetics: leading ':', '(B)', trailing '.'
+static inline void strip_display_tokens(char* s) {
+  if (!s) return;
+  // Remove all occurrences of "_B_"
+  for (char* p = strstr(s, "_B_"); p != nullptr; p = strstr(s, "_B_")) {
+    memmove(p, p + 3, strlen(p + 3) + 1);
+  }
+}
+
 void fire_action(action* act, byte p, byte i, byte e)
 {
           pedals[p].lastUpdate[0] = micros();
@@ -1083,6 +1093,7 @@ void fire_action(action* act, byte p, byte i, byte e)
           lastSlot = act->slot;
           lastActionControl = act->control;  // store "last executed action id"
           strlcpy(lastPedalName, act->name, MAXACTIONNAME+1);
+          strip_display_tokens(lastPedalName);
           DPRINT("Action %s....", act->name);
           switch (act->midiMessage) {
             case PED_EMPTY:
@@ -1133,10 +1144,14 @@ void fire_action(action* act, byte p, byte i, byte e)
                   a = a->next;
                 }
               }
-              if (act->midiCode % 2)
+              if (act->midiCode % 2){
                 strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
-              else
+                strip_display_tokens(lastPedalName);
+              }
+              else{
                 strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
+              }
               break;
 
             case PED_PROGRAM_CHANGE:
@@ -1147,11 +1162,13 @@ void fire_action(action* act, byte p, byte i, byte e)
                     midi_send(act->midiMessage, act->midiValue2, act->midiValue1, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                     leds_update(e, act);
                     strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                    strip_display_tokens(lastPedalName);
                   } else {
                     lastProgramChange[act->midiChannel] = act->midiCode;
                     midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                     leds_update(e, act);
                     strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                    strip_display_tokens(lastPedalName);
                   }
                   break;
                 case PED_EVENT_RELEASE:
@@ -1160,11 +1177,13 @@ void fire_action(action* act, byte p, byte i, byte e)
                     midi_send(act->midiMessage, act->midiValue1, act->midiValue2, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                     leds_update(e, act);
                     strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+                    strip_display_tokens(lastPedalName);
                   } else {
                     lastProgramChange[act->midiChannel] = act->midiCode;
                     midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                     leds_update(e, act);
                     strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+                    strip_display_tokens(lastPedalName);
                   }
                   break;
                 default:
@@ -1172,6 +1191,7 @@ void fire_action(action* act, byte p, byte i, byte e)
                   midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                   leds_update(e, act);
                   strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                  strip_display_tokens(lastPedalName);
                   break;
               }
               break;
@@ -1184,11 +1204,13 @@ void fire_action(action* act, byte p, byte i, byte e)
                 midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, 0, MIDI_RESOLUTION - 1, currentBank, p, i);
                 leds_update(e, act);
                 strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               else {
                 midi_send(act->midiMessage, act->midiCode, act->midiValue2, act->midiChannel, true, 0, MIDI_RESOLUTION - 1, currentBank, p, i);
                 leds_update(e, act);
                 strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               break;
 
@@ -1198,11 +1220,13 @@ void fire_action(action* act, byte p, byte i, byte e)
                 midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                 leds_update(e, act);
                 strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               else {
                 midi_send(act->midiMessage, act->midiCode, act->midiValue2, act->midiChannel, true, act->midiValue1, act->midiValue2, currentBank, p, i);
                 leds_update(e, act);
                 strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               break;
 
@@ -1348,6 +1372,7 @@ void fire_action(action* act, byte p, byte i, byte e)
                 DPRINT("OSC MESSAGE.....%s %d\n", act->oscAddress, act->midiValue2);
                 currentMIDIValue[currentBank][p][i] = act->midiValue2;
                 strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               else {
                  if (act->midiValue1 == act->midiValue2)
@@ -1357,6 +1382,7 @@ void fire_action(action* act, byte p, byte i, byte e)
                 DPRINT("OSC MESSAGE.....%s %d\n", act->oscAddress, act->midiValue1);
                 currentMIDIValue[currentBank][p][i] = act->midiValue1;
                 strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+                strip_display_tokens(lastPedalName);
               }
               break;
 
