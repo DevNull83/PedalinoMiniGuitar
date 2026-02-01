@@ -251,6 +251,11 @@ void setup()
   SERIALDEBUG.setDebugOutput(true);   // enable diagnostic output and printf() output
 #endif
 
+  // --- Stabilize LED data line as early as possible (avoid random frames on long data cables)
+  pinMode(FASTLEDS_DATA_PIN, OUTPUT);
+  digitalWrite(FASTLEDS_DATA_PIN, LOW);
+  delayMicroseconds(80); // WS2812 reset time > 50us
+
   DPRINT("%s - Version %d.%d.%d\n", MODEL, PEDALINO_VERSION_MAJOR, PEDALINO_VERSION_MINOR, PEDALINO_VERSION_PATCH);
   DPRINT("CPU0 reset reason: ");
   verbose_print_reset_reason(rtc_get_reset_reason(0));
