@@ -95,7 +95,9 @@ const byte pinA[] = {GPIO_NUM_36, GPIO_NUM_39, GPIO_NUM_34, GPIO_NUM_35, GPIO_NU
 // ADC2:   11-20 (19=D- 20=D+) (ADC2 module is also used by the Wi-Fi)
 // SPI0/1: 26-32 (usually used for SPI flash and PSRAM)
 // SPI0/1: 33-37 (on boards embedded with ESP32-S3R8 / ESP32-S3R8V chip, GPIO33~37 are also not recommended for other uses)
-const byte pinD[] = {GPIO_NUM_38, GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42, GPIO_NUM_43, GPIO_NUM_44, GPIO_NUM_2, GPIO_NUM_0};
+//const byte pinD[] = {GPIO_NUM_38, GPIO_NUM_39, GPIO_NUM_40, GPIO_NUM_41, GPIO_NUM_42, GPIO_NUM_43, GPIO_NUM_44, GPIO_NUM_2, GPIO_NUM_0};
+//Changed pinD for a better hardware ladder config
+const byte pinD[] = {GPIO_NUM_43, GPIO_NUM_44, GPIO_NUM_42, GPIO_NUM_41, GPIO_NUM_40, GPIO_NUM_39, GPIO_NUM_38, GPIO_NUM_2, GPIO_NUM_0};
 const byte pinA[] = {GPIO_NUM_4,  GPIO_NUM_5,  GPIO_NUM_6,  GPIO_NUM_7,  GPIO_NUM_8,  GPIO_NUM_9,  GPIO_NUM_10, GPIO_NUM_2, GPIO_NUM_0};
 #define FACTORY_DEFAULT_PIN   GPIO_NUM_0    // Button BOOT
 #define DIN_MIDI_IN_PIN       GPIO_NUM_21
