@@ -10,6 +10,7 @@ __________           .___      .__  .__                 _____  .__       .__    
  */
 
 #include "Fonts.h"
+#include "DisplayUtil.h"
 
 #if defined(HELTEC_WIFI_KIT_32)
 #include <oled/SSD1306Wire.h>
@@ -670,6 +671,12 @@ void bottomOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
   }
 }
 
+// --- Detect the "live/value" display token used by Expression pedals ---
+static inline bool has_exp_value_token(const char* s) {
+  if (!s || !*s) return false;
+  return strstr(s, "EXP") != nullptr;
+}
+
 void drawRect(OLEDDisplay *display, int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
   display->drawLine(x0+1, y0,   x1-1, y0);
@@ -907,6 +914,7 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
         // Display pedals name
         display->setFont(ArialMT_Plain_10);
         const byte Pedals = _min(PEDALS, 6);
+        static String g_lastNonExpTitle; // UI-only: remember last non-EXP title for slot 0
         for (byte p = 0; p < Pedals/2; p++) {
           switch (p) {
             case 0:
@@ -930,24 +938,46 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
           name.replace(String("###"), String(currentMIDIValue[currentBank][p][0]));
 
           // NEW: override ONLY the first top slot (p == 0)
-          // Show last action tag if available, otherwise show "act#<lastActionControl>"
+          // Show last action tag if available (UI-only), otherwise show a persistent non-EXP title or fallback to bank label.
           if (p == 0) {
             String dyn;
+            bool   useDyn = false;
 
             // Prefer last action label/tag if present and not suppressed by ':'
             if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
-              dyn = String(lastPedalName);
-
-              // Optional: remove trailing '.' if you use it as a marker
-              if (dyn.length() > 0 && dyn[dyn.length() - 1] == '.') {
-                dyn.remove(dyn.length() - 1);
+              // UI-only: sanitize on a local copy; do not mutate firmware state
+              char tmp[MAXACTIONNAME + 32] = {0};
+              strlcpy(tmp, lastPedalName, sizeof(tmp));
+              strip_display_tokens(tmp);                    // remove "_B_" for UI
+              if (std::strstr(tmp, "EXP") == nullptr) {       // EXP bypass for title
+                dyn = String(tmp);
+                if (dyn.endsWith(".")) dyn.remove(dyn.length() - 1); // cosmetic
+                dyn.trim();
+                useDyn = (dyn.length() > 0);
               }
             } else if (lastActionControl != 0xFFFF) {
-              dyn = String("act#") + String(lastActionControl+1);
+              dyn    = String("act#") + String(lastActionControl + 1);
+              useDyn = (dyn.length() > 0);
             }
 
-            if (dyn.length() > 0) {
+            if (useDyn) {
+              // Use current non-EXP title and remember it for later EXP bypasses
               name = dyn;
+              g_lastNonExpTitle = dyn;                         // UI-only persistence
+            } else {
+              // If EXP was bypassed, prefer the last non-EXP title we remembered.
+              if (g_lastNonExpTitle.length() > 0) {
+                name = g_lastNonExpTitle;
+              } else {
+                // Fallback to current bank label, sanitized only for UI
+                char t[MAXACTIONNAME + 32] = {0};
+                strlcpy(t, name.c_str(), sizeof(t));
+                strip_display_tokens(t);                    // remove "_B_" for UI
+                String clean = String(t);
+                if (clean.endsWith(".")) clean.remove(clean.length() - 1);
+                clean.trim();
+                name = clean;
+              }
             }
           }
 
