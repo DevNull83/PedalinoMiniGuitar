@@ -11,7 +11,6 @@ __________           .___      .__  .__                 _____  .__       .__    
 
 #include <algorithm>
 #include <list>
-#include "DisplayUtil.h"
 
 struct event {
   unsigned long timestamp;
@@ -1073,6 +1072,16 @@ void midi_send(byte message, byte code, byte value, byte channel, bool on_off, b
       //currentMIDIValue[bank][pedal][button] = channel;
       //lastMIDIMessage[currentBank] = {(byte)(message == PED_SEQUENCE_STEP_BY_STEP_FWD ? PED_SEQUENCE_STEP_BY_STEP_FWD : PED_SEQUENCE_STEP_BY_STEP_REV), code, value, channel};
       break;
+  }
+}
+
+// === Display text sanitizer ===============================================
+// Remove display-only tokens and cosmetics: _B_
+static inline void strip_display_tokens(char* s) {
+  if (!s) return;
+  // Remove all occurrences of "_B_"
+  for (char* p = strstr(s, "_B_"); p != nullptr; p = strstr(s, "_B_")) {
+    memmove(p, p + 3, strlen(p + 3) + 1);
   }
 }
 

@@ -10,7 +10,6 @@ __________           .___      .__  .__                 _____  .__       .__    
  */
 
 #include "Fonts.h"
-#include "DisplayUtil.h"
 
 #if defined(HELTEC_WIFI_KIT_32)
 #include <oled/SSD1306Wire.h>
@@ -63,6 +62,79 @@ bool          uiUpdate = true;
 
 #define WIFI_LOGO_WIDTH   78
 #define WIFI_LOGO_HEIGHT  64
+
+// UI-only: remove behavior tokens from what we SHOW on display
+static inline void ui_stripTokens(char* s) {
+  auto removeAll = [](char* str, const char* sub) {
+    const size_t sublen = strlen(sub);
+    if (sublen == 0) return;
+    char* p;
+    while ((p = strstr(str, sub)) != nullptr) {
+      memmove(p, p + sublen, strlen(p + sublen) + 1);
+    }
+  };
+  removeAll(s, "_B_");
+  removeAll(s, "_H_");
+  removeAll(s, "_L_");
+}
+
+static inline bool ui_pedal_has_any_action(uint8_t pedalIdx) {
+  // Check current bank
+  if (banks[currentBank][pedalIdx].midiMessage != PED_EMPTY) return true;
+
+  // Check global bank actions explicitly (bank 0)
+  // because create_banks() fills banks[b] looking only at actions[b].
+  action* a = actions[0];
+  while (a != nullptr) {
+    const auto &c = controls[a->control];
+    // consider actions where this pedal participates (simple or dual)
+    if (c.pedal1 == pedalIdx || c.pedal2 == pedalIdx) return true;
+    a = a->next;
+  }
+  return false;
+}
+
+static inline bool ui_find_boot_default_tag(uint8_t pedalIdx, char* out, size_t outSize) {
+  auto scanBank = [&](uint8_t bank) -> bool {
+    action* a = actions[bank];
+    while (a != nullptr) {
+      const auto &c = controls[a->control];
+
+      // Prefer "simple" mappings (one pedal only) as boot defaults.
+      // In Controller.h simple controls are those with pedal2 == PEDALS and button2 == LADDER_STEPS.
+      bool simple = (c.pedal1 == pedalIdx && c.pedal2 == PEDALS && c.button2 == LADDER_STEPS);
+      if (!simple) { a = a->next; continue; }
+
+      const char* cand = nullptr;
+      if (strstr(a->tag1, "_B_") != nullptr) cand = a->tag1;
+      else if (strstr(a->tag0, "_B_") != nullptr) cand = a->tag0;
+      else if (strstr(a->name, "_B_") != nullptr) cand = a->name; // optional fallback
+
+      if (cand != nullptr) {
+        strlcpy(out, cand, outSize);
+        ui_stripTokens(out); // remove _B_/_H_/_L_ from display text (your UI rule)
+
+        // cosmetic: drop trailing dot
+        size_t len = strlen(out);
+        if (len > 0 && out[len - 1] == '.') out[len - 1] = '\0';
+
+        // trim (cheap)
+        while (*out == ' ') memmove(out, out + 1, strlen(out));
+        while ((len = strlen(out)) > 0 && out[len - 1] == ' ') out[len - 1] = '\0';
+
+        return out[0] != '\0';
+      }
+
+      a = a->next;
+    }
+    return false;
+  };
+
+  // prefer current bank default, then global bank
+  if (scanBank(currentBank)) return true;
+  if (scanBank(0)) return true;
+  return false;
+}
 
 const uint8_t WiFiLogo[] PROGMEM = {
   0x00, 0x00, 0x00, 0xFC, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -565,7 +637,11 @@ void topOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
 
     // Show only if available and not suppressed by ':' convention
     if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
-      String s(lastPedalName);
+      char tmp[MAXACTIONNAME+1] = {0};
+      strlcpy(tmp, lastPedalName, sizeof(tmp));
+      ui_stripTokens(tmp);
+      String s(tmp);
+
 
       // Keep it short to avoid clutter
       const int maxChars = 10;
@@ -747,8 +823,12 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
         display->drawString(18 + x, 22 + y, String(m4));
       }
     }
-    else {
-      String name = lastPedalName;
+    else {  
+      char tmp[MAXACTIONNAME+1] = {0};
+      strlcpy(tmp, lastPedalName, sizeof(tmp));
+      ui_stripTokens(tmp);
+      String name = String(tmp);
+
       switch (m1) {
         case midi::InvalidType:
           drawRect(display, 64-22, 15, 64+24, 15+23);
@@ -908,9 +988,74 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
         // Display pedals name
         display->setFont(ArialMT_Plain_10);
         const byte Pedals = _min(PEDALS, 6);
-        static String g_lastNonExpTitle; // UI-only: remember last non-EXP title for slot 0
+
+        // ---------- Start UI-only: per-pedal last tag + context handling ------------------------
+        static char     ui_lastTagByPedal[PEDALS][MAXACTIONNAME+1] = {{0}};
+        static uint32_t ui_lastTagMsByPedal[PEDALS] = {0};
+
+        static String   ui_contextTitle;        // last "context" tag (sanitized)
+        static uint32_t ui_ctxNextToggleMs = 0; // toggle timer
+        static bool     ui_showContext = false;
+
+        static uint32_t ui_blinkUntilMs = 0;    // when > millis(), blink is active
+        static uint32_t ui_blinkHalfPeriodMs = 150; // blink speed (half period)
+
+        // case-insensitive contains (ASCII, enough for our tags)
+        auto ui_containsI = [](const char* s, const char* needle) -> bool {
+          if (!s || !needle) return false;
+          size_t nlen = strlen(needle);
+          if (nlen == 0) return true;
+          for (const char* p = s; *p; ++p) {
+            size_t i = 0;
+            while (needle[i] && p[i] &&
+                  (tolower((unsigned char)p[i]) == tolower((unsigned char)needle[i]))) {
+              ++i;
+            }
+            if (i == nlen) return true;
+          }
+          return false;
+        };
+        // ----------End UI-only: per-pedal last tag + context handling ---------------------------
+
+        // If we have a recent last action tag, associate it to the last used pedal (UI only)
+        if (lastUsedPedal != 0xFF && lastUsedPedal < PEDALS && lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
+          char tmp[MAXACTIONNAME+1] = {0};
+          strlcpy(tmp, lastPedalName, sizeof(tmp));
+
+          // detect flags BEFORE stripping (so _H_/_L_ can drive behavior)
+          const bool isHidden = (strstr(tmp, "_H_") != nullptr);
+          const bool isBlink  = (strstr(tmp, "_L_") != nullptr);
+
+          // sanitize for display
+          ui_stripTokens(tmp);
+
+          // cosmetic: drop trailing dot
+          size_t len = strlen(tmp);
+          if (len > 0 && tmp[len - 1] == '.') tmp[len - 1] = '\0';
+
+          // store per-pedal tag if any visible content remains
+          String s = String(tmp);
+          s.trim();
+          if (s.length() > 0) {
+            strlcpy(ui_lastTagByPedal[lastUsedPedal], s.c_str(), sizeof(ui_lastTagByPedal[lastUsedPedal]));
+            ui_lastTagMsByPedal[lastUsedPedal] = millis();
+          }
+
+          // update CONTEXT only if not hidden and not EXP
+          if (!isHidden && !ui_containsI(tmp, "EXP")) {
+            ui_contextTitle = String(tmp);
+            ui_contextTitle.trim();
+
+            // start blink window if _L_ was present in original tag
+            if (isBlink) {
+              ui_blinkUntilMs = millis() + 2500;    // 2.5s blink window (tweakable)
+              ui_blinkHalfPeriodMs = 150;           // fast toggle (tweakable)
+            }
+          }
+        }
+
         for (byte p = 0; p < Pedals/2; p++) {
-          switch (p) {
+switch (p) {
             case 0:
               display->setTextAlignment(TEXT_ALIGN_LEFT);
               offsetText = 1;
@@ -927,89 +1072,140 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
               offsetBackground = 1;
               break;
           }
+
           // Top line
           name = String((banks[currentBank][p].pedalName[0] == ':') ? &banks[currentBank][p].pedalName[1] : banks[currentBank][p].pedalName);
-          name.replace(String("###"), String(currentMIDIValue[currentBank][p][0]));
 
-          // NEW: override ONLY the first top slot (p == 0)
-          // Show last action tag if available (UI-only), otherwise show a persistent non-EXP title or fallback to bank label.
-          if (p == 0) {
-            String dyn;
-            bool   useDyn = false;
+          // UI-only: slot shows last action tag for that pedal/port, else ACT#N
+          {
+            const uint8_t idx = p; // slot -> pedal index
 
-            // Prefer last action label/tag if present and not suppressed by ':'
-            if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
-              // UI-only: sanitize on a local copy; do not mutate firmware state
-              char  tmp[MAXACTIONNAME+1] = "";
-              strlcpy(tmp, lastPedalName, sizeof(tmp));
-              strip_display_tokens(tmp);                    // remove "_B_" for UI
-              if (strstr(tmp, "EXP") == nullptr) {       // EXP bypass for title
-                dyn = String(tmp);
-                if (dyn.endsWith(".")) dyn.remove(dyn.length() - 1); // cosmetic
-                dyn.trim();
-                useDyn = (dyn.length() > 0);
-              }
-            } else if (lastActionControl != 0xFFFF) {
-              dyn    = String("act#") + String(lastActionControl + 1);
-              useDyn = (dyn.length() > 0);
-            }
-
-            if (useDyn) {
-              // Use current non-EXP title and remember it for later EXP bypasses
-              name = dyn;
-              g_lastNonExpTitle = dyn;                         // UI-only persistence
+            // 1) If there are NO actions for this pedal/slot, show nothing
+            if (!ui_pedal_has_any_action(idx)) {
+              name = "";
             } else {
-              // If EXP was bypassed, prefer the last non-EXP title we remembered.
-              if (g_lastNonExpTitle.length() > 0) {
-                name = g_lastNonExpTitle;
+              // 2) If no last tag yet, try to initialize from _B_ default
+              if (ui_lastTagByPedal[idx][0] == '\0') {
+                char bootTag[MAXACTIONNAME + 1] = {0};
+                if (ui_find_boot_default_tag(idx, bootTag, sizeof(bootTag))) {
+                  strlcpy(ui_lastTagByPedal[idx], bootTag, sizeof(ui_lastTagByPedal[idx]));
+                }
+              }
+
+              if (ui_lastTagByPedal[idx][0] != '\0') {
+                name = String(ui_lastTagByPedal[idx]);
               } else {
-                // Fallback to current bank label, sanitized only for UI
-                char t[MAXACTIONNAME+1] = "";
-                strlcpy(t, name.c_str(), sizeof(t));
-                strip_display_tokens(t);                    // remove "_B_" for UI
-                String clean = String(t);
-                if (clean.endsWith(".")) clean.remove(clean.length() - 1);
-                clean.trim();
-                name = clean;
+                // Has actions but no tag yet: fallback act#N            
+                // At boot (no interaction yet), keep slot empty unless a _B_ default was found
+                if (ui_lastTagMsByPedal[idx] == 0) name = "";
+                else name = String("act#") + String(idx + 1);
               }
             }
           }
 
-          if (IS_SINGLE_PRESS_ENABLED(pedals[p].pressMode) && currentMIDIValue[currentBank][p][0] == banks[currentBank][p].midiValue2) {
-            display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
-                              12 + y,
-                              display->getStringWidth(name) + 1,
-                              10);
-            display->setColor(BLACK);
-          }
-          else
+          for (byte __slot = 0; __slot < 1; __slot++) {
+            if (name.length() == 0) {
+              display->setColor(WHITE);
+              continue; // skip this slot
+            }
+
+            name.replace(String("###"), String(currentMIDIValue[currentBank][p][0]));
+            if (IS_SINGLE_PRESS_ENABLED(pedals[p].pressMode) && currentMIDIValue[currentBank][p][0] == banks[currentBank][p].midiValue2) {
+              display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
+                                12 + y,
+                                display->getStringWidth(name) + 1,
+                                10);
+              display->setColor(BLACK);
+            }
+            else
+              display->setColor(WHITE);
+
+            display->drawString((128 / (Pedals / 2 - 1)) * p + offsetText + x, 10 + y, name);
             display->setColor(WHITE);
-          display->drawString((128 / (Pedals / 2 - 1)) * p + offsetText + x, 10 + y, name);
-          display->setColor(WHITE);
+          }
+
           // Bottom line
           name = String((banks[currentBank][p + Pedals / 2].pedalName[0] == ':') ? &banks[currentBank][p + Pedals / 2].pedalName[1] : banks[currentBank][p + Pedals / 2].pedalName);
-          name.replace(String("###"), String(currentMIDIValue[currentBank][p + Pedals / 2][0]));
-          if (IS_SINGLE_PRESS_ENABLED(pedals[p + Pedals / 2].pressMode) && currentMIDIValue[currentBank][p + Pedals / 2][0] == banks[currentBank][p + Pedals / 2].midiValue2) {
-            display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
-                              53 + y,
-                              display->getStringWidth(name) + 1,
-                              10);
-            display->setColor(BLACK);
+
+          // UI-only: slot shows last action tag for that pedal/port, else ACT#N
+          {
+            const uint8_t idx = p + (Pedals / 2);
+
+            // 1) If there are NO actions for this pedal/slot, show nothing
+            if (!ui_pedal_has_any_action(idx)) {
+              name = "";
+            } else {
+              // 2) If no last tag yet, try to initialize from _B_ default
+              if (ui_lastTagByPedal[idx][0] == '\0') {
+                char bootTag[MAXACTIONNAME + 1] = {0};
+                if (ui_find_boot_default_tag(idx, bootTag, sizeof(bootTag))) {
+                  strlcpy(ui_lastTagByPedal[idx], bootTag, sizeof(ui_lastTagByPedal[idx]));
+                }
+              }
+
+              if (ui_lastTagByPedal[idx][0] != '\0') {
+                name = String(ui_lastTagByPedal[idx]);
+              } else {
+                // Has actions but no tag yet: fallback act#N
+                // At boot (no interaction yet), keep slot empty unless a _B_ default was found
+                if (ui_lastTagMsByPedal[idx] == 0) name = "";
+                else name = String("act#") + String(idx + 1);
+              }
+            }
           }
-          else
+
+          for (byte __slot = 0; __slot < 1; __slot++) {
+            if (name.length() == 0) {
+              display->setColor(WHITE);
+              continue; // skip this slot
+            }
+
+            name.replace(String("###"), String(currentMIDIValue[currentBank][p + Pedals / 2][0]));
+            if (IS_SINGLE_PRESS_ENABLED(pedals[p + Pedals / 2].pressMode) && currentMIDIValue[currentBank][p + Pedals / 2][0] == banks[currentBank][p + Pedals / 2].midiValue2) {
+              display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
+                                53 + y,
+                                display->getStringWidth(name) + 1,
+                                10);
+              display->setColor(BLACK);
+            }
+            else
+              display->setColor(WHITE);
+
+            display->drawString((128 / (Pedals / 2 - 1)) * p + offsetText + x, 51 + y, name);
             display->setColor(WHITE);
-          display->drawString((128 / (Pedals / 2 - 1)) * p + offsetText + x, 51 + y, name);
-          display->setColor(WHITE);
+          }
         }
+
         // Center area
         if (((millis() - ms < 4000) && (banknames[currentBank][0] != '.')) || (banknames[currentBank][0] == ':')) {
-          // Display bank name
+          // Display bank name (and optionally alternate with context)
           display->drawRect(0, 23, 128, 29);
-          name = (banknames[currentBank][0] == ':') ? &banknames[currentBank][1] : banknames[currentBank];
-          name.replace(String("##"), String(currentBank));
+
+          String bankLabel = (banknames[currentBank][0] == ':') ? &banknames[currentBank][1] : banknames[currentBank];
+          bankLabel.replace(String("##"), String(currentBank));
+
+          // Default center text is bank label
+          String centerText = bankLabel;
+
+          // Alternate ONLY when bank name is forced with ':' and we have a context title
+          if (banknames[currentBank][0] == ':' && ui_contextTitle.length() > 0) {
+            const uint32_t now = millis();
+
+            // choose speed: blink (fast) if within blink window, else normal (slow)
+            const bool blinkActive = (now < ui_blinkUntilMs);
+            const uint32_t halfPeriod = blinkActive ? ui_blinkHalfPeriodMs : 800; // 800ms half => 1.6s full
+
+            if (now >= ui_ctxNextToggleMs) {
+              ui_showContext = !ui_showContext;
+              ui_ctxNextToggleMs = now + halfPeriod;
+            }
+
+            centerText = ui_showContext ? ui_contextTitle : bankLabel;
+          }
+
           display->setFont(ArialMT_Plain_24);
           display->setTextAlignment(TEXT_ALIGN_CENTER_BOTH);
-          display->drawString( 64 + x, 37 + y, name);
+          display->drawString(64 + x, 37 + y, centerText);
         }
         else if (((millis() - ms < 8000) || (banknames[currentBank][0] == '.')) && (banknames[currentBank][0] != ':')) {
           // Display pedal values
@@ -1182,8 +1378,8 @@ void display_boot()
     // Micro test
     display.clear();
     //display.setColor(WHITE);
-    //display.drawVerticalLine(0, 0, display.getHeight());                    // border sx
-    //display.drawVerticalLine(display.getWidth()-1, 0, display.getHeight()); // border dx
+    //display.drawVerticalLine(0, 0, display.getHeight());                    // left border
+    //display.drawVerticalLine(display.getWidth()-1, 0, display.getHeight()); // right border
     //display.display();
     //delay(5000);
     // End micro test
