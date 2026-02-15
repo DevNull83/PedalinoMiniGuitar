@@ -671,12 +671,6 @@ void bottomOverlay(OLEDDisplay *display, OLEDDisplayUiState* state)
   }
 }
 
-// --- Detect the "live/value" display token used by Expression pedals ---
-static inline bool has_exp_value_token(const char* s) {
-  if (!s || !*s) return false;
-  return strstr(s, "EXP") != nullptr;
-}
-
 void drawRect(OLEDDisplay *display, int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
   display->drawLine(x0+1, y0,   x1-1, y0);
@@ -946,10 +940,10 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
             // Prefer last action label/tag if present and not suppressed by ':'
             if (lastPedalName[0] != '\0' && lastPedalName[0] != ':') {
               // UI-only: sanitize on a local copy; do not mutate firmware state
-              char tmp[MAXACTIONNAME + 32] = {0};
+              char  tmp[MAXACTIONNAME+1] = "";
               strlcpy(tmp, lastPedalName, sizeof(tmp));
               strip_display_tokens(tmp);                    // remove "_B_" for UI
-              if (std::strstr(tmp, "EXP") == nullptr) {       // EXP bypass for title
+              if (strstr(tmp, "EXP") == nullptr) {       // EXP bypass for title
                 dyn = String(tmp);
                 if (dyn.endsWith(".")) dyn.remove(dyn.length() - 1); // cosmetic
                 dyn.trim();
@@ -970,7 +964,7 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
                 name = g_lastNonExpTitle;
               } else {
                 // Fallback to current bank label, sanitized only for UI
-                char t[MAXACTIONNAME + 32] = {0};
+                char t[MAXACTIONNAME+1] = "";
                 strlcpy(t, name.c_str(), sizeof(t));
                 strip_display_tokens(t);                    // remove "_B_" for UI
                 String clean = String(t);
@@ -1188,11 +1182,11 @@ void display_boot()
     // Micro test
     display.clear();
     //display.setColor(WHITE);
-    //display.drawVerticalLine(0, 0, display.getHeight());                    // bordo sinistro
-    //display.drawVerticalLine(display.getWidth()-1, 0, display.getHeight()); // bordo destro
+    //display.drawVerticalLine(0, 0, display.getHeight());                    // border sx
+    //display.drawVerticalLine(display.getWidth()-1, 0, display.getHeight()); // border dx
     //display.display();
     //delay(5000);
-    // Fine micro test
+    // End micro test
 
   #endif
   display.setContrast(255);
