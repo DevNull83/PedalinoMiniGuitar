@@ -1089,6 +1089,13 @@ switch (p) {
                 char bootTag[MAXACTIONNAME + 1] = {0};
                 if (ui_find_boot_default_tag(idx, bootTag, sizeof(bootTag))) {
                   strlcpy(ui_lastTagByPedal[idx], bootTag, sizeof(ui_lastTagByPedal[idx]));
+                  // Prime center alternation at boot using the _B_ default tag
+                  if (ui_contextTitle.length() == 0 && !ui_containsI(bootTag, "EXP")) {
+                    ui_contextTitle = String(bootTag);
+                    ui_contextTitle.trim();
+                    ui_showContext = false;
+                    ui_ctxNextToggleMs = 0;
+                  }
                 }
               }
 
@@ -1140,6 +1147,13 @@ switch (p) {
                 char bootTag[MAXACTIONNAME + 1] = {0};
                 if (ui_find_boot_default_tag(idx, bootTag, sizeof(bootTag))) {
                   strlcpy(ui_lastTagByPedal[idx], bootTag, sizeof(ui_lastTagByPedal[idx]));
+                  // Prime center alternation at boot using the _B_ default tag
+                  if (ui_contextTitle.length() == 0 && !ui_containsI(bootTag, "EXP")) {
+                    ui_contextTitle = String(bootTag);
+                    ui_contextTitle.trim();
+                    ui_showContext = false;
+                    ui_ctxNextToggleMs = 0;
+                  }
                 }
               }
 
