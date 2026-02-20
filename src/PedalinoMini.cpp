@@ -539,6 +539,9 @@ void setup()
   serial_midi_connect();              // On receiving MIDI data callbacks setup
   DPRINT("DIN MIDI started\n");
 
+  boot_led_chase_test(50);
+  boot_led_blink_all(4, 120, 120);
+
 #ifdef BLUFI
   blufi_config();
 #endif
@@ -579,9 +582,6 @@ void setup()
 #endif
 
   set_initial_led_color();
-
-  boot_led_chase_test(50);
-  boot_led_blink_all(4, 120, 120);
   
   OnBoot_run_marked_action_in_current_bank(); // execute first action with _B_
 

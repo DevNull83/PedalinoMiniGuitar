@@ -448,14 +448,15 @@ void set_initial_led_color()
         else if (act->tag0[0] != 0 && act->tag0[strlen(act->tag0) - 1] == '.') {
           set_last_led_color(b, led_control(act->control, act->led), act->color0, ledsOffBrightness);
         }
-        if (act->midiMessage == PED_SEQUENCE) {
+        // Avoid preload LED_COLOR steps from SEQUENCE actions during startup 
+        /*if (act->midiMessage == PED_SEQUENCE) {
           for (byte s = 0; s < STEPS; s++) {
             if (sequences[act->midiChannel-1][s].midiMessage == PED_ACTION_LED_COLOR) {
               set_last_led_color(b, sequences[act->midiChannel-1][s].led, sequences[act->midiChannel-1][s].color, ledsOnBrightness);
               ledstatus[sequences[act->midiChannel-1][s].led] = true;
             }
           }
-        }
+        }*/
       }
       act = act->next;
     }
