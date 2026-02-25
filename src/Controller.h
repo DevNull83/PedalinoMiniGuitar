@@ -1090,6 +1090,7 @@ void fire_action(action* act, byte p, byte i, byte e)
 {
           pedals[p].lastUpdate[0] = micros();
           lastUsedPedal = p;
+          lastUsedSwitch = i;   // keep track of ladder button index for correct UI highlight
           lastUsed = p;
           lastSlot = act->slot;
           lastActionControl = act->control;  // store "last executed action id"

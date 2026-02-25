@@ -136,6 +136,19 @@ static inline bool ui_find_boot_default_tag(uint8_t pedalIdx, char* out, size_t 
   return false;
 }
 
+// Returns the action mapped to a specific (pedal, button) in a given bank.
+// We match only "simple" controls (no pedal2/button2).
+static action* ui_find_action_for(byte bank, uint8_t pedal, uint8_t button) {
+  for (action* a = actions[bank]; a != nullptr; a = a->next) {
+    const auto &c = controls[a->control];
+    const bool simple =
+      (c.pedal1 == pedal && c.button1 == button &&
+       c.pedal2 == PEDALS && c.button2 == LADDER_STEPS);
+    if (simple) return a;
+  }
+  return nullptr;
+}
+
 const uint8_t WiFiLogo[] PROGMEM = {
   0x00, 0x00, 0x00, 0xFC, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0xFF, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xE0, 0xFF,
@@ -992,6 +1005,8 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
         // ---------- Start UI-only: per-pedal last tag + context handling ------------------------
         static char     ui_lastTagByPedal[PEDALS][MAXACTIONNAME+1] = {{0}};
         static uint32_t ui_lastTagMsByPedal[PEDALS] = {0};
+        // Used to compute the highlight box correctly for ladder buttons (0..LADDER_STEPS-1).
+        static uint8_t ui_lastBtnByPedal[PEDALS] = {0};
 
         static String   ui_contextTitle;        // last "context" tag (sanitized)
         static uint32_t ui_ctxNextToggleMs = 0; // toggle timer
@@ -1039,6 +1054,8 @@ void drawFrame1(OLEDDisplay *display, OLEDDisplayUiState* state, int16_t x, int1
           if (s.length() > 0) {
             strlcpy(ui_lastTagByPedal[lastUsedPedal], s.c_str(), sizeof(ui_lastTagByPedal[lastUsedPedal]));
             ui_lastTagMsByPedal[lastUsedPedal] = millis();
+            // Remember which ladder button produced this tag (used for correct highlight state)
+            ui_lastBtnByPedal[lastUsedPedal] = (lastUsedSwitch == 0xFF ? 0 : lastUsedSwitch);
           }
 
           // update CONTEXT only if not hidden and not EXP
@@ -1116,8 +1133,13 @@ switch (p) {
               continue; // skip this slot
             }
 
-            name.replace(String("###"), String(currentMIDIValue[currentBank][p][0]));
-            if (IS_SINGLE_PRESS_ENABLED(pedals[p].pressMode) && currentMIDIValue[currentBank][p][0] == banks[currentBank][p].midiValue2) {
+            // Use the last used ladder button (if any) to evaluate state and to replace ### correctly
+            uint8_t btnIdx = (ui_lastBtnByPedal[p] < LADDER_STEPS ? ui_lastBtnByPedal[p] : 0);
+            action* aBtn = ui_find_action_for(currentBank, p, btnIdx);
+            if (!aBtn) aBtn = ui_find_action_for(0, p, btnIdx); // fallback global bank
+            byte onValue = aBtn ? aBtn->midiValue2 : banks[currentBank][p].midiValue2;
+            name.replace(String("###"), String(currentMIDIValue[currentBank][p][btnIdx]));
+            if (IS_SINGLE_PRESS_ENABLED(pedals[p].pressMode) && currentMIDIValue[currentBank][p][btnIdx] == onValue) {
               display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
                                 12 + y,
                                 display->getStringWidth(name) + 1,
@@ -1174,8 +1196,13 @@ switch (p) {
               continue; // skip this slot
             }
 
-            name.replace(String("###"), String(currentMIDIValue[currentBank][p + Pedals / 2][0]));
-            if (IS_SINGLE_PRESS_ENABLED(pedals[p + Pedals / 2].pressMode) && currentMIDIValue[currentBank][p + Pedals / 2][0] == banks[currentBank][p + Pedals / 2].midiValue2) {
+            // Use the last used ladder button (if any) to evaluate state and to replace ### correctly
+            uint8_t btnIdx = (ui_lastBtnByPedal[p + Pedals / 2] < LADDER_STEPS ? ui_lastBtnByPedal[p + Pedals / 2] : 0);
+            action* aBtn = ui_find_action_for(currentBank, p + Pedals / 2, btnIdx);
+            if (!aBtn) aBtn = ui_find_action_for(0, p + Pedals / 2, btnIdx); // fallback global bank
+            byte onValue = aBtn ? aBtn->midiValue2 : banks[currentBank][p + Pedals / 2].midiValue2;
+            name.replace(String("###"), String(currentMIDIValue[currentBank][p + Pedals / 2][btnIdx]));
+            if (IS_SINGLE_PRESS_ENABLED(pedals[p + Pedals / 2].pressMode) && currentMIDIValue[currentBank][p + Pedals / 2][btnIdx] == onValue) {
               display->fillRect((128 / (Pedals / 2 - 1)) * p - offsetBackground * display->getStringWidth(name) / 2 + offsetText + x,
                                 53 + y,
                                 display->getStringWidth(name) + 1,
