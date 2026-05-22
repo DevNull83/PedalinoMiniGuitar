@@ -1113,48 +1113,76 @@ void fire_action(action* act, byte p, byte i, byte e)
 
             case PED_SEQUENCE_STEP_BY_STEP_FWD:
             case PED_SEQUENCE_STEP_BY_STEP_REV:
+            {
               act->midiChannel = constrain(act->midiChannel, 1, SEQUENCES);
-              act->midiCode    = constrain(act->midiCode, 0, STEPS - 1);
-              act->midiCode    = (sequences[act->midiChannel - 1][act->midiCode].midiMessage == PED_EMPTY) ? 0 : act->midiCode;
-              if (sequences[act->midiChannel - 1][0].midiMessage == PED_EMPTY) break;
-              midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel - 1, true, act->midiValue1, act->midiValue2, currentBank, p, i, led_control(act->control, act->led));
-              switch (act->midiMessage) {
-                case PED_SEQUENCE_STEP_BY_STEP_FWD:
-                  act->midiCode = (act->midiCode + 1 ) % STEPS;
-                  act->midiCode = (sequences[act->midiChannel - 1][act->midiCode].midiMessage == PED_EMPTY ? 0 : act->midiCode);
-                  break;
-                case PED_SEQUENCE_STEP_BY_STEP_REV:
-                  if (act->midiCode == 0) {
-                    byte s;
-                    for (s = 0; s < STEPS; s++) {
-                      if (sequences[act->midiChannel - 1][s].midiMessage == PED_EMPTY) break;
-                    }
-                    if (s > 0) act->midiCode = s - 1;
-                  }
-                  else if (act->midiCode > 0) act->midiCode--;
-                  break;
+              const byte seq = act->midiChannel - 1;
+
+              // Count valid steps in the sequence.
+              byte stepCount = 0;
+              for (stepCount = 0; stepCount < STEPS; stepCount++) {
+                if (sequences[seq][stepCount].midiMessage == PED_EMPTY) break;
               }
+              if (stepCount == 0) break;
+
+              act->midiCode = constrain(act->midiCode, 0, stepCount - 1);
+              static int8_t lastDir[SEQUENCES] = {0};
+              const int8_t dir = (act->midiMessage == PED_SEQUENCE_STEP_BY_STEP_FWD) ? +1 : -1;
+              byte step = act->midiCode;
+
+              // If direction changed, realign the next-step pointer before executing.
+              if (lastDir[seq] != 0 && lastDir[seq] != dir) {
+                int correctedStep = (int)step + (dir - lastDir[seq]); // +2 or -2
+                while (correctedStep < 0) correctedStep += stepCount;
+                while (correctedStep >= stepCount) correctedStep -= stepCount;
+                step = (byte)correctedStep;
+              }
+
+              lastDir[seq] = dir;
+              midi_send(sequences[seq][step].midiMessage,
+                        sequences[seq][step].midiCode,
+                        sequences[seq][step].midiValue,
+                        sequences[seq][step].midiChannel,
+                        true,
+                        0,
+                        MIDI_RESOLUTION - 1,
+                        currentBank,
+                        p,
+                        i,
+                        led_control(act->control, act->led));
+
+              // Prepare next step for the next click.
+              int nextStep = (int)step + dir;
+              while (nextStep < 0) nextStep += stepCount;
+              while (nextStep >= stepCount) nextStep -= stepCount;
+              act->midiCode = (byte)nextStep;
+
+              // Sync current step for the same sequence in other actions.
               for (byte b = 0; b < BANKS; b++) {
                 action *a = actions[b];
-                while ( a != nullptr) {
+                while (a != nullptr) {
                   switch (a->midiMessage) {
                     case PED_SEQUENCE_STEP_BY_STEP_FWD:
                     case PED_SEQUENCE_STEP_BY_STEP_REV:
-                      if (a != act && a->midiChannel == act->midiChannel)   // different action and same sequence
-                        a->midiCode = act->midiCode;                        // update current step for the sequence in other actions
+                      if (a != act && a->midiChannel == act->midiChannel) {
+                        a->midiCode = act->midiCode;
+                      }
+                      break;
                   }
                   a = a->next;
                 }
               }
-              if (act->midiCode % 2){
-                strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
+
+              if (act->midiCode % 2) {
+                strlcpy(lastPedalName, act->tag0, MAXACTIONNAME + 1);
                 strip_display_tokens(lastPedalName);
               }
-              else{
-                strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
+              else {
+                strlcpy(lastPedalName, act->tag1, MAXACTIONNAME + 1);
                 strip_display_tokens(lastPedalName);
               }
+
               break;
+            }
 
             case PED_PROGRAM_CHANGE:
               switch (e) {
