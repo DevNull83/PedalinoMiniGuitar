@@ -24,7 +24,7 @@ __________           .___      .__  .__                 _____  .__       .__    
 #define BANKS            21   // 20 banks + 1 bank for global actions
 #define PEDALS            6   // real number of pedals is board specific (see below)
 #define CONTROLS        100
-#define SEQUENCES        20
+#define SEQUENCES        35
 #define STEPS            20   // number of steps for each sequence
 #define LADDER_STEPS      6   // max number of controls in a resistor ladder
 #define ADC_BOARDS        4   //
