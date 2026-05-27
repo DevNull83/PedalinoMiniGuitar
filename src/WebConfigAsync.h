@@ -3374,6 +3374,23 @@ void get_sequences_page(unsigned int start, unsigned int len) {
   page += F("<path d='M2 1a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H9.5a1 1 0 0 0-1 1v7.293l2.646-2.647a.5.5 0 0 1 .708.708l-3.5 3.5a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L7.5 9.293V2a2 2 0 0 1 2-2H14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h2.5a.5.5 0 0 1 0 1H2z'>");
   page += F("</svg>");
   page += F(" Save</button>");
+  page += F(" ");
+  page += F("<div class='btn-group ms-2'>");
+  page += F("<button type='button' class='btn btn-warning btn-sm dropdown-toggle' data-bs-toggle='dropdown'>Clone To</button>");
+  page += F("<div class='dropdown-menu'>");
+
+  for (unsigned int i = 1; i <= SEQUENCES; i++) {
+    page += F("<button type='submit' class='dropdown-item' name='action' value='clone_");
+    page += s;   // sorgente (quella aperta)
+    page += F("_to_");
+    page += i;   // destinazione
+    page += F("'>");
+    page += i;
+    page += F("</button>");
+  }
+
+  page += F("</div>"); // dropdown-menu
+  page += F("</div>"); // btn-group
   page += F("</div>");
   page += F("</div>");
   page += F("</div>");
@@ -5969,12 +5986,42 @@ void http_handle_post_sequences(AsyncWebServerRequest *request) {
     sequences[s][i].color = ((red & 0xff) << 16) | ((green & 0xff) << 8) | (blue & 0xff);
   }
   if (request->arg("action").equals("apply")) {
-    alert = F("Changes applied. Changes will be lost on next reboot or on profile switch if not saved.");
+  alert = F("Changes applied. Changes will be lost on next reboot or on profile switch if not saved.");
   }
   else if (request->arg("action").equals("save")) {
     eeprom_update_profile();
     eeprom_update_current_profile(currentProfile);
     alert = "Changes saved.";
+  }
+  else if (request->arg("action").startsWith("clone_")) {
+    int from = 0;
+    int to = 0;
+
+    if (sscanf(request->arg("action").c_str(), "clone_%d_to_%d", &from, &to) == 2) {
+      // UI uses 1-based sequence numbers, array uses 0-based indexes
+      from--;
+      to--;
+      if (from >= 0 && from < SEQUENCES &&
+          to   >= 0 && to   < SEQUENCES &&
+          from != to) {
+        for (byte step = 0; step < STEPS; step++) {
+          sequences[to][step] = sequences[from][step];
+        }
+        uisequence = String(to + 1);
+        alert = F("Sequence cloned. Changes will be lost on next reboot or on profile switch if not saved.");
+      }
+      else {
+        alertError = F("Invalid sequence clone request.");
+      }
+    }
+    else {
+      alertError = F("Invalid sequence clone request.");
+    }
+  }
+
+  if (request->arg("action").startsWith("clone_")) {
+    request->redirect(String("/sequences?sequence=") + uisequence);
+    return;
   }
 
   AsyncWebServerResponse *response = request->beginChunkedResponse("text/html", get_sequences_page_chunked);
