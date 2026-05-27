@@ -3328,15 +3328,23 @@ void get_sequences_page(unsigned int start, unsigned int len) {
 
   if (get_top_page(6, start, len)) return;
 
-  page += F("<div class='btn-group mb-3'>");
+  page += F("<div class='mb-3'>");
   for (unsigned int i = 1; i <= SEQUENCES; i++) {
-    page += F("<form method='get'><button type='button submit' class='btn");
-    page += (uisequence == String(i) ? F(" btn-primary") : F(""));
+    if ((i - 1) % 10 == 0) {
+      page += F("<div class='btn-group mb-1' role='group'>");
+    }
+    page += F("<form method='get'>");
+    page += F("<button type='button submit' class='btn btn-sm");
+    page += (uisequence == String(i) ? F(" btn-primary") : F(" btn-outline-primary"));
     page += F("' name='sequence' value='");
     page += i;
     page += F("'>");
     page += i;
-    page += F("</button></form>");
+    page += F("</button>");
+    page += F("</form>");
+    if (i % 10 == 0 || i == SEQUENCES) {
+      page += F("</div>");
+    }
   }
   page += F("</div>");
 
