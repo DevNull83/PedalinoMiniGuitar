@@ -11,6 +11,7 @@ __________           .___      .__  .__                 _____  .__       .__    
 
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
+#include <esp_heap_caps.h>
 
 #ifdef NVS
 #include <Preferences.h>
@@ -20,6 +21,17 @@ Preferences preferences;
 
 extern String httpUsername;
 extern String httpPassword;
+
+action* alloc_action() {
+#ifdef BOARD_HAS_PSRAM
+  return (action*)heap_caps_malloc(
+      sizeof(action),
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+  );
+#else
+  return (action*)malloc(sizeof(action));
+#endif
+}
 
 #ifdef BOARD_HAS_PSRAM
 struct SpiRamAllocator : ArduinoJson::Allocator {
@@ -688,7 +700,7 @@ void spiffs_load_config(const String& filename, bool loadActions = true, bool lo
           b = constrain(b, 0, BANKS - 1);
           action *act = actions[b];
           if (act == nullptr) {
-            actions[b] = (action*)malloc(sizeof(action));
+            actions[b] = alloc_action();
             assert(actions[b] != nullptr);
             actions[b]->control        = jo["Control"];
             actions[b]->control--;
@@ -718,7 +730,7 @@ void spiffs_load_config(const String& filename, bool loadActions = true, bool lo
           }
           else while (act != nullptr) {
                 if (act->next == nullptr) {
-                  act->next = (action*)malloc(sizeof(action));
+                  act->next = alloc_action();
                   assert(act->next != nullptr);
                   //if (!act->next) return;
                   act = act->next;
@@ -900,7 +912,7 @@ void load_factory_default()
   }
   pedals[PEDALS-2].pressMode = PED_PRESS_1_2_L;
   action *act;
-  act = actions[0] = (action*)malloc(sizeof(action));
+  act = actions[0] = alloc_action();
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
   act->control      = 36;
@@ -915,7 +927,7 @@ void load_factory_default()
   act->midiValue2   = BANKS - 1;
   act->slot         = SLOTS;
   act->oscAddress[0] = 0;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -931,7 +943,7 @@ void load_factory_default()
   act->midiValue2   = BANKS - 1;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -946,7 +958,7 @@ void load_factory_default()
   act->midiValue2   = 127;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -997,7 +1009,7 @@ void load_factory_default()
                 };
   pedals[PEDALS-1].pressMode = PED_PRESS_1_2_L;
   action *act;
-  act = actions[0] = (action*)malloc(sizeof(action));
+  act = actions[0] = alloc_action();
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
   act->control      = 36;
@@ -1012,7 +1024,7 @@ void load_factory_default()
   act->midiValue2   = BANKS - 1;
   act->slot         = SLOTS;
   act->oscAddress[0] = 0;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -1028,7 +1040,7 @@ void load_factory_default()
   act->midiValue2   = PROFILES;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -1043,7 +1055,7 @@ void load_factory_default()
   act->midiValue2   = 127;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -1092,7 +1104,7 @@ void load_factory_default()
                  nullptr
                 };
   action *act;
-  act = actions[0] = (action*)malloc(sizeof(action));
+  act = actions[0] = alloc_action();
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
   act->control      = 37;
@@ -1107,7 +1119,7 @@ void load_factory_default()
   act->midiValue2   = PROFILES;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -1123,7 +1135,7 @@ void load_factory_default()
   act->midiValue2   = 127;
   act->oscAddress[0] = 0;
   act->slot         = SLOTS;
-  act->next         = (action*)malloc(sizeof(action));
+  act->next         = alloc_action();
   act = act->next;
   act->tag0[0]      = 0;
   act->tag1[0]      = 0;
@@ -1757,7 +1769,7 @@ void eeprom_read_profile(byte profile = currentProfile)
     for (byte i = 0; i < action_size; i++) {
       memset(label, 0, 10);
       sprintf(label, "%d.%d", b, i);
-      action *a = (action*)malloc(sizeof(action));
+      action *a = alloc_action();
       assert(a != nullptr);
       int n = preferences.getBytes(label, a, sizeof(action));
       assert(n == sizeof(action));
