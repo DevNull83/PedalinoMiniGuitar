@@ -43,6 +43,125 @@ unsigned int map_analog(byte p, unsigned int value)
   return value;
 }
 
+// === Display text sanitizer ===============================================
+// Remove display-only tokens and cosmetics: _B_
+static inline void strip_display_tokens(char* s) {
+  if (!s) return;
+  // Remove all occurrences of "_B_"
+  for (char* p = strstr(s, "_B_"); p != nullptr; p = strstr(s, "_B_")) {
+    memmove(p, p + 3, strlen(p + 3) + 1);
+  }
+}
+
+byte midi_latch_message_key(byte midiMessage)
+{
+  if (midiMessage == PED_CONTROL_CHANGE_SNAP) return PED_CONTROL_CHANGE;
+  return midiMessage;
+}
+
+int find_midi_latch_state(byte bank, byte midiMessage, byte midiChannel, byte midiCode)
+{
+  midiMessage = midi_latch_message_key(midiMessage);
+
+  for (byte i = 0; i < CONTROLS; i++) {
+    if (midiLatchState[bank][i].midiMessage == midiMessage &&
+        midiLatchState[bank][i].midiChannel == midiChannel &&
+        midiLatchState[bank][i].midiCode == midiCode) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+bool get_midi_latch_state(byte bank, byte midiMessage, byte midiChannel, byte midiCode)
+{
+  midiMessage = midi_latch_message_key(midiMessage);
+
+  int index = find_midi_latch_state(bank, midiMessage, midiChannel, midiCode);
+
+  if (index < 0)
+    return false;
+
+  return midiLatchState[bank][index].active;
+}
+
+void set_midi_latch_state(byte bank, byte midiMessage, byte midiChannel, byte midiCode, bool active)
+{
+  midiMessage = midi_latch_message_key(midiMessage);
+
+  int index = find_midi_latch_state(bank, midiMessage, midiChannel, midiCode);
+
+  if (index < 0) {
+
+    for (byte i = 0; i < CONTROLS; i++) {
+
+      if (midiLatchState[bank][i].midiMessage == 0) {
+
+        midiLatchState[bank][i].midiMessage = midiMessage;
+        midiLatchState[bank][i].midiChannel = midiChannel;
+        midiLatchState[bank][i].midiCode    = midiCode;
+        midiLatchState[bank][i].active      = active;
+
+        return;
+      }
+    }
+  }
+  else {
+
+    midiLatchState[bank][index].active = active;
+  }
+}
+
+void update_midi_latch_state_from_value(byte bank, byte midiMessage, byte midiChannel, byte midiCode, byte midiValue)
+{
+  midiMessage = midi_latch_message_key(midiMessage);
+
+  switch (midiMessage) {
+    case PED_NOTE_ON:
+    case PED_NOTE_OFF:
+    case PED_CONTROL_CHANGE:
+    case PED_CONTROL_CHANGE_SNAP:
+      set_midi_latch_state(
+          bank,
+          midiMessage,
+          midiChannel,
+          midiCode,
+          midiValue > 0);
+      break;
+  }
+}
+
+void display_update_midi_latch_state(action *act, bool active)
+{
+  if (active) {
+    strlcpy(lastPedalName, act->tag1, MAXACTIONNAME + 1);
+  }
+  else {
+    strlcpy(lastPedalName, act->tag0, MAXACTIONNAME + 1);
+  }
+
+  strip_display_tokens(lastPedalName);
+}
+
+void leds_refresh(byte l);
+void set_last_led_color(byte b, byte l, CRGB c, byte bri);
+void leds_update_midi_latch_state(action *act, bool active, byte bank = currentBank)
+{
+  byte l = led_control(act->control, act->led);
+
+  if (l >= LEDS) return;
+
+  if (active) {
+    set_last_led_color(bank, l, act->color1, ledsOnBrightness);
+  }
+  else {
+    set_last_led_color(bank, l, act->color0, ledsOffBrightness);
+  }
+
+  leds_refresh(l);
+}
+
 void leds_off()
 {
   // Set all leds off
@@ -776,6 +895,10 @@ void midi_send(byte message, byte code, byte value, byte channel, bool on_off, b
 {
   code    = constrain(code,    0, MIDI_RESOLUTION - 1);
   value   = constrain(value,   0, MIDI_RESOLUTION - 1);
+  
+  if (on_off) {
+      update_midi_latch_state_from_value(bank, message, channel, code, value);
+    }
 
   bool channelMessage = (message == PED_NOTE_ON            ) ||
                         (message == PED_NOTE_OFF           ) ||
@@ -1076,16 +1199,6 @@ void midi_send(byte message, byte code, byte value, byte channel, bool on_off, b
   }
 }
 
-// === Display text sanitizer ===============================================
-// Remove display-only tokens and cosmetics: _B_
-static inline void strip_display_tokens(char* s) {
-  if (!s) return;
-  // Remove all occurrences of "_B_"
-  for (char* p = strstr(s, "_B_"); p != nullptr; p = strstr(s, "_B_")) {
-    memmove(p, p + 3, strlen(p + 3) + 1);
-  }
-}
-
 void fire_action(action* act, byte p, byte i, byte e)
 {
           pedals[p].lastUpdate[0] = micros();
@@ -1230,19 +1343,37 @@ void fire_action(action* act, byte p, byte i, byte e)
             case PED_NOTE_OFF:
             case PED_CONTROL_CHANGE:
             case PED_CONTROL_CHANGE_SNAP:
-              if (e == PED_EVENT_RELEASE) {
+            {
+              bool currentState = get_midi_latch_state(currentBank, act->midiMessage, act->midiChannel, act->midiCode);
+
+              if (act->event == PED_EVENT_PRESS_RELEASE) {
+                currentState = !currentState;
+              }
+              else if (e == PED_EVENT_PRESS) {
+                currentState = true;
+              }
+              else if (e == PED_EVENT_RELEASE) {
+                currentState = false;
+              }
+              else {
+                currentState = !currentState;
+              }
+
+              set_midi_latch_state(currentBank, act->midiMessage, act->midiChannel, act->midiCode, currentState);
+
+              if (!currentState) {
                 midi_send(act->midiMessage, act->midiCode, act->midiValue1, act->midiChannel, true, 0, MIDI_RESOLUTION - 1, currentBank, p, i);
-                leds_update(e, act);
-                strlcpy(lastPedalName, act->tag0, MAXACTIONNAME+1);
-                strip_display_tokens(lastPedalName);
+                leds_update_midi_latch_state(act, currentState);
+                display_update_midi_latch_state(act, currentState);
               }
               else {
                 midi_send(act->midiMessage, act->midiCode, act->midiValue2, act->midiChannel, true, 0, MIDI_RESOLUTION - 1, currentBank, p, i);
-                leds_update(e, act);
-                strlcpy(lastPedalName, act->tag1, MAXACTIONNAME+1);
-                strip_display_tokens(lastPedalName);
+                leds_update_midi_latch_state(act, currentState);
+                display_update_midi_latch_state(act, currentState);
               }
+
               break;
+            }
 
             case PED_PITCH_BEND:
             case PED_CHANNEL_PRESSURE:
@@ -2285,6 +2416,7 @@ void set_or_clear(ButtonConfig *config, ButtonConfig::FeatureFlagType f, bool fl
 void controller_setup()
 {
   lastUsedSwitch = 0xFF;
+  memset(midiLatchState, 0, sizeof(midiLatchState));
   lastUsedPedal  = 0xFF;
   lastUsed       = 0xFF;
   lastSlot       = SLOTS;

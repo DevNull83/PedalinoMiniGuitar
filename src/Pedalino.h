@@ -441,6 +441,13 @@ struct message {
   uint32_t               color;
 };
 
+struct MidiLatchState {
+  byte midiMessage;
+  byte midiChannel;
+  byte midiCode;
+  bool active;
+};
+
 char      banknames[BANKS][MAXBANKNAME+1];        // Bank Names
 action   *actions[BANKS];                         // Actions
 bank      banks[BANKS][PEDALS];                   // The first action of every pedal
@@ -449,6 +456,7 @@ control   controls[CONTROLS];                     // Controls Setup
 message   sequences[SEQUENCES][STEPS];            // Sequences Setup
 byte      currentMIDIValue[BANKS][PEDALS][LADDER_STEPS];
 message   lastMIDIMessage[BANKS];
+MidiLatchState midiLatchState[BANKS][CONTROLS];
 CRGB      lastColor0;
 CRGB      lastColor1;
 byte      lastProgramChange[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
