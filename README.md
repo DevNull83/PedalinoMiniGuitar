@@ -13,6 +13,12 @@ All core concepts, architecture and most of the original firmware come from the 
 
 Please refer to the original repository for the general documentation, hardware concepts, Web UI usage and baseline firmware behavior.
 
+## Hardware build
+
+Custom guitar MIDI foot controller prototype build based on this PedalinoMini fork.
+
+![PedalinoMiniGuitar hardware build](images/Prototype.jpeg)
+
 ## Main changes in this fork
 
 ### ESP32-S3 N16R8 support
