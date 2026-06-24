@@ -181,6 +181,7 @@ using namespace ace_button;
 #define PED_BOOT_RESET_WIFI     6
 #define PED_BOOT_LADDER_CONFIG  7
 #define PED_FACTORY_DEFAULT     8
+#define PED_BOOT_OFF            9
 
 #define PED_UPDATE_NONE         0
 #define PED_UPDATE_ARDUINO_OTA  1

@@ -460,6 +460,9 @@ void get_root_page(unsigned int start, unsigned int len) {
     case PED_BOOT_AP_NO_BLE:
       page += F("Access Point without BLE");
       break;
+    case PED_BOOT_OFF:
+      page += F("Wireless Off");
+      break;
   }
   page += F("</dd>");
   page += F("<dt>PlatformIO ESP32 Platform</dt><dd>");
@@ -3946,6 +3949,9 @@ void get_options_page(unsigned int start, unsigned int len) {
   page += F("</small>");
 #endif
 
+  page += F("<br><br>");
+  page += F("Leave WiFi and BLE disabled to boot with all wireless services off. Hold BOOT at startup to re-enable and save Normal, WiFi, BLE or AP mode.");
+
   if (trim_page(start, len)) return;
 
 #ifdef BLECLIENT
@@ -6062,7 +6068,7 @@ void http_handle_post_options(AsyncWebServerRequest *request) {
            newBootMode = PED_BOOT_NORMAL;
          else newBootMode = PED_BOOT_WIFI;
   else if (request->arg("bootmodeble") == checked) newBootMode = PED_BOOT_BLE;
-       else newBootMode = PED_BOOT_NORMAL;
+       else newBootMode = PED_BOOT_OFF;
   if (newBootMode != bootMode) {
     bootMode = newBootMode;
     //eeprom_update_boot_mode(bootMode);

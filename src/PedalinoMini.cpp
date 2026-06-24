@@ -420,6 +420,7 @@ void setup()
       case PED_BOOT_WIFI:
       case PED_BOOT_AP:
       case PED_BOOT_AP_NO_BLE:
+      case PED_BOOT_OFF:
         bootMode = newBootMode;
         eeprom_update_boot_mode(bootMode);
         break;
@@ -428,11 +429,12 @@ void setup()
   newBootMode = (newBootMode == PED_BOOT_UNKNOWN) ? bootMode : newBootMode;
   DPRINT("\n");
   switch (newBootMode) {
-    case PED_BOOT_NORMAL:     DPRINT("Boot NORMAL\n");  break;
-    case PED_BOOT_BLE:        DPRINT("Boot BLE\n");     break;
-    case PED_BOOT_WIFI:       DPRINT("Boot WIFI\n");    break;
-    case PED_BOOT_AP:         DPRINT("Boot AP+BLE\n");  break;
-    case PED_BOOT_AP_NO_BLE:  DPRINT("Boot AP\n");      break;
+    case PED_BOOT_NORMAL:     DPRINT("Boot NORMAL\n");        break;
+    case PED_BOOT_BLE:        DPRINT("Boot BLE\n");           break;
+    case PED_BOOT_WIFI:       DPRINT("Boot WIFI\n");          break;
+    case PED_BOOT_AP:         DPRINT("Boot AP+BLE\n");        break;
+    case PED_BOOT_AP_NO_BLE:  DPRINT("Boot AP\n");            break;
+    case PED_BOOT_OFF:        DPRINT("Boot WIRELESS OFF\n");  break;
   }
   switch (newBootMode) {
     case PED_BOOT_NORMAL:
@@ -468,6 +470,12 @@ void setup()
 #else
       wifiEnabled = false;
 #endif
+      break;
+
+
+    case PED_BOOT_OFF:
+      bleEnabled = false;
+      wifiEnabled = false;
       break;
 
     case PED_BOOT_RESET_WIFI:
